@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Data (downloaded from PhysioNet, CC BY 4.0 - not redistributed)
+data/
+*.dat
+*.hea
+
+# Results and model artifacts
+results/
+*.pt
+*.pth
+*.pkl
+*.joblib
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
