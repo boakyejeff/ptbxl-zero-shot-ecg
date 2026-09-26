@@ -1,6 +1,7 @@
 # Cross-Superclass Zero-Shot / Few-Shot Generalization on PTB-XL ECGs
 
 ![Project cover](assets/cover.png)
+
 ## Novelty claim
 
 Standard PTB-XL benchmarks train and test on the **same** 5 diagnostic
@@ -75,6 +76,47 @@ accuracy 0.20 (5-way).
   needs either far more data or a stronger inductive bias than a small MLP on
   hand-crafted features.**
 
+## Supervised experiment: with enough data, a 1D-CNN learns the superclasses
+
+The zero-shot/few-shot null above was run on 200 records. To test whether the
+limitation is data or method, we trained a **supervised 1D ResNet** on a much
+larger slice of PTB-XL and evaluated on a strictly patient-grouped held-out
+test set.
+
+- **Data**: 1,994 PTB-XL v1.0.3 `_hr` (100 Hz) records downloaded from
+  PhysioNet; labels = dominant diagnostic superclass (same argmax recipe as
+  the LOSO experiments).
+- **Splits**: patient-grouped 70/15/15 — train 1,392 / val 302 / test 300
+  records. No patient appears in more than one split (seed 0).
+- **Model** (`src/train_supervised.py`): `ECGResNet` — stem conv + 3 residual
+  blocks (64→128→256 channels), global average pooling, ~974k params. Per-lead
+  z-score normalization, time-shift + noise augmentation, class-weighted
+  cross-entropy, AdamW (lr 3e-4, weight decay 1e-4), batch 64, ReduceLROnPlateau
+  + early stopping on val macro-AUROC (patience 6). CPU training.
+- **Selection**: best checkpoint by val macro-AUROC (0.900 at epoch 15).
+
+### Test results (held-out, patient-grouped, n = 300)
+
+| superclass | AUROC |
+|---|---|
+| NORM | 0.891 |
+| MI | 0.748 |
+| STTC | 0.817 |
+| CD | 0.829 |
+| HYP | 0.763 |
+| **macro** | **0.810** |
+
+Accuracy **0.627**, macro F1 **0.438** (chance: 0.20 / 0.20).
+
+**Takeaway:** the contrast is the point. The 5-shot nearest-centroid approach
+reached 0.29 accuracy on held-out superclasses; the supervised 1D-CNN reaches
+0.63 accuracy and 0.81 macro-AUROC on *seen* superclasses with ~1.4k training
+records. **Few-shot/zero-shot generalization across superclasses fails with
+this setup; supervised learning on the same superclasses works.** The earlier
+null was a data-and-protocol result, not evidence that ECG superclass
+classification is impossible — with 10× more data and direct supervision, a
+modest CNN gets most of the way there.
+
 ## How to run
 
 ```bash
@@ -84,26 +126,42 @@ python -m src.smoke_test              # end-to-end sanity check, ~1-2 min
 python -m src.run_experiment          # full 5-fold LOSO, writes results/
 ```
 
+Supervised experiment (needs ~2k `_hr` records in `data/records/`; torch CPU):
+
+```bash
+python scripts/download_full.py --jobs 8   # downloads superclass-mapped records
+~/workspace/venvs/ptbxl/bin/python src/train_supervised.py --epochs 20 --batch 64
+# writes results/supervised_metrics.json, results/supervised_confusion.csv
+```
+
 `results/loso_results.csv` and `results/summary.json` hold the per-fold and
 aggregate numbers. Features are cached to `results/features_cache.npz` so
 re-runs skip extraction.
 
 ## Limitations (honest)
 
-- **Small sample** (~200 records): each fold trains on ~110–130 records. MLP
+- **Supervised run is a ~2k-record subset** (~9% of full PTB-XL), whatever had
+  downloaded when training started — not the full 21,799 superclass-mapped
+  records, and not the 500 Hz waveforms (100 Hz `_hr` only).
+- **Single dataset, no external validation**: all splits come from PTB-XL;
+  performance on other ECG sources/devices is untested.
+- **Class imbalance persists**: HYP is rare (78 train records); its test AUROC
+  (0.763) and the macro-F1 (0.438) reflect that.
+- **Zero-shot sample** (~200 records): each fold trains on ~110–130 records. MLP
   hyper-parameters are conservative (early stopping, L2), but overfitting risk
   remains; treat absolute numbers as indicative, deltas vs. baseline as the
   signal.
-- **Patient grouping is best-effort**: `stratified_sample_ids` prefers distinct
-  patients, but the 00000 slice is small, so some folds fall back to stratified
-  shuffling. Any residual same-patient leakage would *inflate* ID-side metrics,
+- **Patient grouping is best-effort** (zero-shot part): `stratified_sample_ids`
+  prefers distinct patients, but the 00000 slice is small, so some folds fall
+  back to stratified shuffling. The supervised run uses strict patient-grouped
+  splits. Any residual same-patient leakage would *inflate* ID-side metrics,
   not the held-out-class metrics that matter here.
 - **Held-out classes are "seen" distributionally**: e.g. an MI held out still
   shares acquisition devices/sites with training data; this is a *semantic*
   hold-out, not a domain shift.
-- **Feature choice is deliberately simple**: a contrastive or 1D-CNN embedding
-  trained on the full 21k PTB-XL records would likely do better; this repo tests
-  the *protocol*, not the SOTA model.
+- **Feature choice is deliberately simple** (zero-shot part): a contrastive or
+  1D-CNN embedding trained on the full 21k PTB-XL records would likely do
+  better; this repo tests the *protocol*, not the SOTA model.
 
 ## Repo layout
 
@@ -115,7 +173,9 @@ src/model.py         EmbeddingMLP (sklearn, CPU)
 src/evaluate.py      LOSO protocol: OOD AUROC, 5-shot kNN, baselines
 src/run_experiment.py  CLI driver, writes results/
 src/smoke_test.py    fast end-to-end sanity check
+src/train_supervised.py  supervised 1D-ResNet, patient-grouped splits (torch)
 scripts/download_sample.py  balanced sample download from PhysioNet
+scripts/download_full.py    parallel download of superclass-mapped _hr records
 ```
 
 ## Data provenance
