@@ -3,3 +3,6 @@ numpy>=1.24
 pandas>=2.0
 scikit-learn>=1.3
 scipy>=1.11
+# Needed only for the supervised experiment (src/train_supervised.py).
+# CPU-only install recommended: pip install torch --index-url https://download.pytorch.org/whl/cpu
+torch>=2.0
