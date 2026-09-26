@@ -1,5 +1,6 @@
 # Cross-Superclass Zero-Shot / Few-Shot Generalization on PTB-XL ECGs
 
+![Project cover](assets/cover.png)
 ## Novelty claim
 
 Standard PTB-XL benchmarks train and test on the **same** 5 diagnostic
